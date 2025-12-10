@@ -137,3 +137,16 @@ export async function updateOrderStatus(orderId, newStatus) {
         return false;
     }
 }
+
+export const deleteUser = async (userId) => {
+  const { error } = await supabase
+    .from('users') 
+    .delete()
+    .eq('id', userId);
+
+  if (error) {
+    console.error('Error deleting user:', error);
+    return false;
+  }
+  return true;
+};
