@@ -26,7 +26,7 @@ import {
   insertNewOrder, 
   updateOrderStatus as updateDbOrderStatus,
   insertUser,
-  deleteUser // Ensure this is added to supabaseClient.js
+  deleteUser // <--- NEW IMPORT
 } from './supabaseClient';
 
 export default function App() {
@@ -152,12 +152,6 @@ export default function App() {
     }
   };
 
-  // --- HELPER: ROBUST BRAND DETECTION ---
-  // Checks all common casing variations to find the brand/category
-  const getProductBrand = (p) => {
-    return p.brand || p.Brand || p.category || p.Category || p.CATEGORY || 'Other';
-  };
-
   // --- VIEWS ---
 
   const LoginView = () => (
@@ -225,22 +219,15 @@ export default function App() {
     const [selectedBrand, setSelectedBrand] = useState('All');
 
     const filtered = products.filter(p => {
-      // Search Logic: Includes Name, Part Number, and Brand
-      const brandName = getProductBrand(p).toLowerCase();
       const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                            p.part_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            brandName.includes(searchTerm.toLowerCase());
-      
-      // Brand Filter Logic
-      const productBrand = getProductBrand(p);
-      const matchesBrand = selectedBrand === 'All' || productBrand === selectedBrand; 
-      
+                            p.part_number.toLowerCase().includes(searchTerm.toLowerCase());
+      const productCategory = p.category || p.brand;
+      const matchesBrand = selectedBrand === 'All' || productCategory === selectedBrand; 
       return matchesSearch && matchesBrand;
     });
 
-    // Dynamic Brand List (Unique values from DB)
-    const uniqueBrands = ['All', ...new Set(products.map(p => getProductBrand(p)).filter(b => b !== 'Other'))];
-    const sortedBrands = uniqueBrands.sort();
+    const uniqueBrands = ['All', ...new Set(products.map(p => p.category || p.brand).filter(Boolean))];
+    const brandList = uniqueBrands.length > 1 ? uniqueBrands : ['All', 'Bajaj', 'TVS', 'Piaggio', 'Yamaha', 'Mahindra', 'Ape'];
 
     return (
       <div className="bg-slate-900 min-h-screen pb-20">
@@ -250,29 +237,24 @@ export default function App() {
         <div className="bg-slate-950 px-4 py-3 print:hidden border-b border-slate-800 shadow-md sticky top-[72px] z-40">
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row gap-4">
             
-            {/* SEARCH INPUT */}
             <div className="relative flex-1">
               <Search className="absolute left-3 top-2.5 text-slate-500 w-5 h-5" />
               <input 
                 className="w-full bg-slate-900 text-white border border-slate-800 rounded pl-10 pr-4 py-2 focus:border-yellow-500 outline-none placeholder-slate-600 transition"
-                placeholder="Search Part Name, PN, or Brand..."
+                placeholder="Search Part Name or Part Number..."
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
 
-            {/* BRAND FILTER DROPDOWN */}
             <div className="w-full md:w-48">
               <select 
                 value={selectedBrand}
                 onChange={(e) => setSelectedBrand(e.target.value)}
                 className="w-full bg-slate-900 text-slate-300 border border-slate-800 rounded px-4 py-2 focus:border-yellow-500 outline-none cursor-pointer"
               >
-                 {sortedBrands.length > 1 
-                  ? sortedBrands.map(brand => (
-                      <option key={brand} value={brand}>{brand === 'All' ? 'All Brands' : brand}</option>
-                    ))
-                  : <option value="All">All Brands</option>
-                }
+                {brandList.map(brand => (
+                  <option key={brand} value={brand}>{brand === 'All' ? 'All Brands' : brand}</option>
+                ))}
               </select>
             </div>
 
@@ -287,8 +269,6 @@ export default function App() {
             {filtered.map(product => {
               const myPrice = calculatePrice(product.price);
               const savings = product.price - myPrice;
-              const displayBrand = getProductBrand(product);
-
               return (
                 <div key={product.id} className="bg-slate-800 p-4 rounded-lg border border-slate-700 shadow-lg hover:border-yellow-500/50 transition duration-200 group">
                   <div className="flex justify-between items-start mb-2">
@@ -303,7 +283,7 @@ export default function App() {
                       )}
                     </span>
 
-                    <span className="text-xs text-slate-500 uppercase tracking-wider font-bold">{displayBrand}</span>
+                    <span className="text-xs text-slate-500 uppercase tracking-wider font-bold">{product.category}</span>
                   </div>
                   <h3 className="font-bold text-lg text-white mb-4 line-clamp-2 min-h-[3.5rem] group-hover:text-yellow-400 transition">{product.name}</h3>
                   <div className="bg-slate-900/50 p-3 rounded mb-4 border border-slate-800">
@@ -465,11 +445,13 @@ export default function App() {
       }
     };
 
+    // --- NEW: Handle Delete User Logic ---
     const handleDeleteUser = async (userId, userName) => {
       if (!window.confirm(`Are you sure you want to delete ${userName}?`)) return;
       
-      const success = await deleteUser(userId); 
+      const success = await deleteUser(userId); // Call the DB function
       if (success) {
+        // Remove from local state immediately
         setUsers(users.filter(u => u.id !== userId));
         alert("User Deleted Successfully");
       } else {
@@ -510,7 +492,7 @@ export default function App() {
                      <td className="p-4 text-slate-200">{p.name}</td>
                      <td className="p-4 font-mono text-sm text-slate-400">{p.part_number}</td>
                      <td className="p-4 text-slate-400">{p.HSN_code || '-'}</td>
-                     <td className="p-4 text-slate-400">{getProductBrand(p)}</td>
+                     <td className="p-4 text-slate-400">{p.category || '-'}</td>
                      <td className="p-4 text-slate-200">₹{p.price}</td>
                      <td className="p-4 text-slate-200">{p.stock}</td>
                    </tr>
@@ -530,6 +512,7 @@ export default function App() {
                     </div>
                     <div className="flex items-center gap-3">
                         <div className="bg-green-900/30 text-green-400 border border-green-800 px-3 py-1 rounded text-sm font-bold">{u.discount}% Discount</div>
+                        {/* DELETE BUTTON ADDED HERE */}
                         <button 
                             onClick={() => handleDeleteUser(u.id, u.name)} 
                             className="p-2 text-slate-500 hover:text-red-400 hover:bg-slate-700 rounded transition"
