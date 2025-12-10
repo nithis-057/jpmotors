@@ -224,17 +224,14 @@ export default function App() {
     const [selectedBrand, setSelectedBrand] = useState('All');
 
     const filtered = products.filter(p => {
-      // --- CRASH FIX START ---
-      // We use (p.name || '') to default to empty string if data is null. 
-      // This prevents .toLowerCase() from crashing the app.
+      // SAFE SEARCH: handle nulls
       const name = p.name ? p.name.toLowerCase() : '';
       const partNo = p.part_number ? p.part_number.toLowerCase() : '';
       const brandName = getProductBrand(p).toLowerCase();
       const term = searchTerm.toLowerCase();
 
       const matchesSearch = name.includes(term) || partNo.includes(term) || brandName.includes(term);
-      // --- CRASH FIX END ---
-
+      
       // Brand Filter Logic
       const productBrand = getProductBrand(p);
       const matchesBrand = selectedBrand === 'All' || productBrand === selectedBrand; 
@@ -554,7 +551,18 @@ export default function App() {
                     <input placeholder="Username" className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:border-yellow-500 outline-none" value={newUserForm.username} onChange={e => setNewUserForm({...newUserForm, username: e.target.value})} required />
                     <input placeholder="Password" className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:border-yellow-500 outline-none" value={newUserForm.password} onChange={e => setNewUserForm({...newUserForm, password: e.target.value})} required />
                   </div>
-                  <div><label className="text-xs font-bold text-slate-500">Discount Tier (%)</label><input type="number" className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:border-yellow-500 outline-none" value={newUserForm.discount} onChange={e => setNewUserForm({...newUserForm, discount: parseInt(e.target.value)})} /></div>
+                  {/* DECIMAL DISCOUNT UPDATE START */}
+                  <div>
+                    <label className="text-xs font-bold text-slate-500">Discount Tier (%)</label>
+                    <input 
+                      type="number" 
+                      step="0.1" 
+                      className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:border-yellow-500 outline-none" 
+                      value={newUserForm.discount} 
+                      onChange={e => setNewUserForm({...newUserForm, discount: parseFloat(e.target.value)})} 
+                    />
+                  </div>
+                  {/* DECIMAL DISCOUNT UPDATE END */}
                   <button className="w-full bg-yellow-500 text-slate-900 font-bold py-2 rounded hover:bg-yellow-400 transition">Create Credentials</button>
                 </form>
               </div>
