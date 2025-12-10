@@ -26,7 +26,7 @@ import {
   insertNewOrder, 
   updateOrderStatus as updateDbOrderStatus,
   insertUser,
-  deleteUser // Ensure this is added to supabaseClient.js
+  deleteUser 
 } from './supabaseClient';
 
 export default function App() {
@@ -455,7 +455,12 @@ export default function App() {
 
     const handleCreateUser = async (e) => {
       e.preventDefault();
-      const userPayload = { ...newUserForm, role: 'retailer' };
+      const userPayload = { 
+        ...newUserForm, 
+        discount: parseFloat(newUserForm.discount), // PARSE ONLY ON SUBMIT
+        role: 'retailer' 
+      };
+      
       const createdUser = await insertUser(userPayload);
       if (createdUser) {
         setUsers([...users, createdUser]);
@@ -551,18 +556,17 @@ export default function App() {
                     <input placeholder="Username" className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:border-yellow-500 outline-none" value={newUserForm.username} onChange={e => setNewUserForm({...newUserForm, username: e.target.value})} required />
                     <input placeholder="Password" className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:border-yellow-500 outline-none" value={newUserForm.password} onChange={e => setNewUserForm({...newUserForm, password: e.target.value})} required />
                   </div>
-                  {/* DECIMAL DISCOUNT UPDATE START */}
+                  {/* DECIMAL DISCOUNT FIX: STORE AS STRING, PARSE ON SUBMIT */}
                   <div>
                     <label className="text-xs font-bold text-slate-500">Discount Tier (%)</label>
                     <input 
                       type="number" 
-                      step="0.1" 
+                      step="0.01" 
                       className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:border-yellow-500 outline-none" 
                       value={newUserForm.discount} 
-                      onChange={e => setNewUserForm({...newUserForm, discount: parseFloat(e.target.value)})} 
+                      onChange={e => setNewUserForm({...newUserForm, discount: e.target.value})} 
                     />
                   </div>
-                  {/* DECIMAL DISCOUNT UPDATE END */}
                   <button className="w-full bg-yellow-500 text-slate-900 font-bold py-2 rounded hover:bg-yellow-400 transition">Create Credentials</button>
                 </form>
               </div>
