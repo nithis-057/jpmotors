@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'; 
+import React, { useState, useEffect, useRef } from 'react'; 
 import { 
   Package, 
   ShoppingCart, 
@@ -15,7 +15,10 @@ import {
   Clock,
   Printer,
   Box,
-  Home 
+  Home,
+  Camera,
+  Loader2,
+  AlertTriangle 
 } from 'lucide-react';
 
 // Import database functions
@@ -29,19 +32,25 @@ import {
   deleteUser 
 } from './supabaseClient';
 
+// --- CONFIGURATION ---
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY; 
+
 export default function App() {
   const [user, setUser] = useState(null); 
   const [view, setView] = useState('login'); 
   
-  // Initialize with empty arrays (waiting for DB)
+  // Data States
   const [products, setProducts] = useState([]);
   const [users, setUsers] = useState([]);
   const [orders, setOrders] = useState([]);
-  
   const [cart, setCart] = useState([]);
+  
+  // UI States
   const [loginError, setLoginError] = useState('');
+  const [isScanning, setIsScanning] = useState(false); 
+  const fileInputRef = useRef(null); 
 
-  // --- 1. SESSION PERSISTENCE FIX ---
+  // --- 1. SESSION PERSISTENCE ---
   useEffect(() => {
     const savedUser = localStorage.getItem('jp_user');
     if (savedUser) {
@@ -60,10 +69,8 @@ export default function App() {
     async function loadData() {
       const productData = await fetchProducts();
       setProducts(productData);
-
       const userData = await fetchUsers();
       setUsers(userData);
-
       const orderData = await fetchAllOrders();
       setOrders(orderData);
     }
@@ -71,12 +78,11 @@ export default function App() {
   }, []);
   
 
-  // --- LOGIC ---
+  // --- CORE LOGIC ---
   const handleLogin = (e) => {
     e.preventDefault();
     const username = e.target.username.value;
     const password = e.target.password.value;
-    
     const foundUser = users.find(u => u.username === username && u.password === password);
     
     if (foundUser) {
@@ -121,6 +127,147 @@ export default function App() {
     setCart(cart.filter(item => item.id !== id));
   };
 
+  // --- AI SCANNING LOGIC (SMART AUTO-DETECT) ---
+  const handleImageUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    if (!GEMINI_API_KEY) {
+      alert("API Key missing! Please set VITE_GEMINI_API_KEY in your .env file.");
+      return;
+    }
+
+    setIsScanning(true);
+
+    try {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      
+      reader.onloadend = async () => {
+        const base64Data = reader.result.split(',')[1]; 
+        const mimeType = file.type || 'image/jpeg'; 
+
+        // ---------------------------------------------------------
+        // STEP 1: AUTO-DETECT THE BEST AVAILABLE MODEL
+        // ---------------------------------------------------------
+        let activeModel = 'gemini-1.5-flash'; // Fallback
+        try {
+          // We ask the API: "Which models does this key have access to?"
+          const listResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`);
+          const listData = await listResp.json();
+          
+          if (listData.models) {
+            // We search for a model that supports generating content and is Flash or Pro
+            const bestModel = listData.models.find(m => 
+              (m.name.includes('flash') || m.name.includes('pro')) && 
+              m.supportedGenerationMethods.includes('generateContent')
+            );
+            
+            if (bestModel) {
+              // The API returns "models/gemini-1.5-flash", we use that exactly
+              activeModel = bestModel.name.replace('models/', '');
+              console.log("Auto-Detected Best Model:", activeModel);
+            }
+          }
+        } catch (e) {
+          console.warn("Model auto-detect failed, using fallback:", activeModel);
+        }
+
+        // ---------------------------------------------------------
+        // STEP 2: SEND IMAGE TO THE DETECTED MODEL
+        // ---------------------------------------------------------
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  { 
+                    text: `Analyze this image (handwritten or printed list). Extract automobile spare part numbers and their quantities.
+                           - Look for format like "PartNumber - Qty" or "PartNumber 5".
+                           - If quantity is missing, default to 1.
+                           - Return strictly a JSON Array: [{"part_number": "string", "qty": number}]
+                           - Do not include markdown formatting.` 
+                  },
+                  { inline_data: { mime_type: mimeType, data: base64Data } }
+                ]
+              }]
+            })
+          }
+        );
+
+        const data = await response.json();
+        
+        if (data.error) {
+          console.error("Gemini API Error:", data.error);
+          alert(`AI Error: ${data.error.message}\n(Tried model: ${activeModel})`);
+          setIsScanning(false);
+          return;
+        }
+
+        if (data.candidates && data.candidates[0].content) {
+          const rawText = data.candidates[0].content.parts[0].text;
+          const cleanJson = rawText.replace(/```json|```/g, '').trim();
+          
+          try {
+            const detectedItems = JSON.parse(cleanJson);
+            let foundCount = 0;
+            let missingItems = [];
+            
+            let currentCart = [...cart];
+
+            detectedItems.forEach(item => {
+              const cleanPartNo = String(item.part_number).replace(/\s/g, '').toLowerCase();
+              
+              const product = products.find(p => 
+                (p.part_number && p.part_number.replace(/\s/g, '').toLowerCase() === cleanPartNo) ||
+                (p.name && p.name.toLowerCase().includes(cleanPartNo)) 
+              );
+
+              if (product) {
+                const finalPrice = calculatePrice(product.price);
+                const existingItemIndex = currentCart.findIndex(c => c.id === product.id);
+                
+                if (existingItemIndex > -1) {
+                  currentCart[existingItemIndex].qty += (item.qty || 1);
+                } else {
+                  currentCart.push({ ...product, qty: (item.qty || 1), finalPrice });
+                }
+                foundCount++;
+              } else {
+                missingItems.push(item.part_number);
+              }
+            });
+
+            setCart(currentCart);
+            
+            let msg = `Scan Complete!\nFound: ${foundCount} items.`;
+            if (missingItems.length > 0) {
+              msg += `\n\nCould not find in DB: ${missingItems.join(', ')}`;
+            }
+            alert(msg);
+
+          } catch (parseError) {
+            console.error("Failed to parse AI response:", parseError);
+            alert("The AI read the image but returned invalid data. Please try a clearer photo.");
+          }
+        } else {
+          alert("No text detected in the image.");
+        }
+      };
+    } catch (error) {
+      console.error("Error scanning image:", error);
+      alert("System Error: Check console for details.");
+    } finally {
+      setIsScanning(false);
+      if(fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // --- END AI LOGIC ---
+
   const placeOrder = async (grandTotal) => {
     const orderData = { userId: user.id, total: grandTotal };
     const orderItems = cart.map(i => ({
@@ -152,7 +299,6 @@ export default function App() {
     }
   };
 
-  // --- HELPER: ROBUST BRAND DETECTION ---
   const getProductBrand = (p) => {
     return p.brand || p.Brand || p.category || p.Category || p.CATEGORY || 'Other';
   };
@@ -222,24 +368,21 @@ export default function App() {
   const CatalogView = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedBrand, setSelectedBrand] = useState('All');
+    const [quantities, setQuantities] = useState({});
 
     const filtered = products.filter(p => {
-      // SAFE SEARCH: handle nulls
       const name = p.name ? p.name.toLowerCase() : '';
       const partNo = p.part_number ? p.part_number.toLowerCase() : '';
       const brandName = getProductBrand(p).toLowerCase();
       const term = searchTerm.toLowerCase();
 
       const matchesSearch = name.includes(term) || partNo.includes(term) || brandName.includes(term);
-      
-      // Brand Filter Logic
       const productBrand = getProductBrand(p);
       const matchesBrand = selectedBrand === 'All' || productBrand === selectedBrand; 
       
       return matchesSearch && matchesBrand;
     });
 
-    // Dynamic Brand List (Unique values from DB)
     const uniqueBrands = ['All', ...new Set(products.map(p => getProductBrand(p)).filter(b => b !== 'Other'))];
     const sortedBrands = uniqueBrands.sort();
 
@@ -247,11 +390,9 @@ export default function App() {
       <div className="bg-slate-900 min-h-screen pb-20">
         <Header />
         
-        {/* Search and Filter Bar */}
         <div className="bg-slate-950 px-4 py-3 print:hidden border-b border-slate-800 shadow-md sticky top-[72px] z-40">
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row gap-4">
             
-            {/* SEARCH INPUT */}
             <div className="relative flex-1">
               <Search className="absolute left-3 top-2.5 text-slate-500 w-5 h-5" />
               <input 
@@ -261,20 +402,38 @@ export default function App() {
               />
             </div>
 
-            {/* BRAND FILTER DROPDOWN */}
-            <div className="w-full md:w-48">
-              <select 
-                value={selectedBrand}
-                onChange={(e) => setSelectedBrand(e.target.value)}
-                className="w-full bg-slate-900 text-slate-300 border border-slate-800 rounded px-4 py-2 focus:border-yellow-500 outline-none cursor-pointer"
+            <div className="flex gap-2 w-full md:w-auto">
+              <div className="w-full md:w-48">
+                <select 
+                  value={selectedBrand}
+                  onChange={(e) => setSelectedBrand(e.target.value)}
+                  className="w-full bg-slate-900 text-slate-300 border border-slate-800 rounded px-4 py-2 focus:border-yellow-500 outline-none cursor-pointer"
+                >
+                  {sortedBrands.length > 1 
+                    ? sortedBrands.map(brand => (
+                        <option key={brand} value={brand}>{brand === 'All' ? 'All Brands' : brand}</option>
+                      ))
+                    : <option value="All">All Brands</option>
+                  }
+                </select>
+              </div>
+
+              <input 
+                type="file" 
+                accept="image/*, .heic" 
+                ref={fileInputRef} 
+                className="hidden" 
+                onChange={handleImageUpload}
+              />
+              <button 
+                onClick={() => fileInputRef.current.click()}
+                disabled={isScanning}
+                className={`bg-slate-800 border border-slate-700 text-yellow-500 px-4 py-2 rounded hover:bg-slate-700 transition flex items-center gap-2 ${isScanning ? 'opacity-50 cursor-not-allowed' : ''}`}
+                title="Scan Order List"
               >
-                 {sortedBrands.length > 1 
-                  ? sortedBrands.map(brand => (
-                      <option key={brand} value={brand}>{brand === 'All' ? 'All Brands' : brand}</option>
-                    ))
-                  : <option value="All">All Brands</option>
-                }
-              </select>
+                {isScanning ? <Loader2 size={20} className="animate-spin" /> : <Camera size={20} />}
+                <span className="hidden sm:inline">{isScanning ? "Scanning..." : "Scan Order"}</span>
+              </button>
             </div>
 
           </div>
@@ -289,11 +448,11 @@ export default function App() {
               const myPrice = calculatePrice(product.price);
               const savings = product.price - myPrice;
               const displayBrand = getProductBrand(product);
+              const qtyValue = quantities[product.id] || '';
 
               return (
                 <div key={product.id} className="bg-slate-800 p-4 rounded-lg border border-slate-700 shadow-lg hover:border-yellow-500/50 transition duration-200 group">
                   <div className="flex justify-between items-start mb-2">
-                    
                     <span className="text-xs font-bold bg-slate-700 text-slate-300 px-2 py-1 rounded font-mono flex items-center gap-2">
                       <span>PN: {product.part_number}</span>
                       {product.HSN_code && (
@@ -303,10 +462,11 @@ export default function App() {
                         </>
                       )}
                     </span>
-
                     <span className="text-xs text-slate-500 uppercase tracking-wider font-bold">{displayBrand}</span>
                   </div>
+                  
                   <h3 className="font-bold text-lg text-white mb-4 line-clamp-2 min-h-[3.5rem] group-hover:text-yellow-400 transition">{product.name}</h3>
+                  
                   <div className="bg-slate-900/50 p-3 rounded mb-4 border border-slate-800">
                     <div className="flex justify-between items-end">
                       <div className="text-slate-500 text-sm line-through decoration-slate-600 decoration-2">MRP: ₹{product.price}</div>
@@ -321,9 +481,27 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                  <button onClick={() => addToCart(product, 1)} className="w-full bg-yellow-500 text-slate-900 font-bold py-2 rounded hover:bg-yellow-400 transition flex justify-center items-center gap-2 shadow-lg shadow-yellow-500/20">
-                    <Plus size={16} /> Add to Order
-                  </button>
+
+                  <div className="flex gap-2">
+                    <input 
+                      type="number" 
+                      min="1"
+                      placeholder="1"
+                      className="w-20 p-2 bg-slate-950 border border-slate-700 rounded text-white text-center focus:border-yellow-500 outline-none transition"
+                      value={qtyValue}
+                      onChange={(e) => setQuantities({...quantities, [product.id]: e.target.value})}
+                    />
+                    <button 
+                      onClick={() => {
+                        const qtyToAdd = parseInt(qtyValue) > 0 ? parseInt(qtyValue) : 1;
+                        addToCart(product, qtyToAdd);
+                      }} 
+                      className="flex-1 bg-yellow-500 text-slate-900 font-bold py-2 rounded hover:bg-yellow-400 transition flex justify-center items-center gap-2 shadow-lg shadow-yellow-500/20 active:scale-95"
+                    >
+                      <Plus size={16} /> Add {qtyValue ? qtyValue : ''}
+                    </button>
+                  </div>
+
                 </div>
               );
             })}
@@ -341,10 +519,12 @@ export default function App() {
 
   const CartView = () => {
     const subtotal = cart.reduce((acc, item) => acc + (item.finalPrice * item.qty), 0);
-    const packingCharge = Math.ceil(subtotal * 0.02);
-    const taxableValue = subtotal + packingCharge;
-    const gstAmount = Math.ceil(taxableValue * 0.18);
-    const grandTotal = taxableValue + gstAmount;
+    const taxableValue = subtotal; 
+    
+    // CGST/SGST Calculation
+    const cgstAmount = Math.ceil(taxableValue * 0.09); 
+    const sgstAmount = Math.ceil(taxableValue * 0.09); 
+    const grandTotal = taxableValue + cgstAmount + sgstAmount;
 
     return (
       <div className="min-h-screen bg-slate-900 text-slate-200">
@@ -380,8 +560,10 @@ export default function App() {
                 <div className="bg-slate-950 px-6 py-4 border-b border-slate-700"><h3 className="font-bold text-slate-300 flex items-center gap-2"><FileText size={18} /> Invoice Summary</h3></div>
                 <div className="p-6 space-y-3">
                   <div className="flex justify-between text-slate-300"><span>Subtotal (Net)</span><span className="font-bold">₹{subtotal.toLocaleString()}</span></div>
-                  <div className="flex justify-between text-slate-500 text-sm"><span>Packing & Fwd (2%)</span><span>₹{packingCharge.toLocaleString()}</span></div>
-                  <div className="flex justify-between text-slate-500 text-sm border-b border-slate-700 pb-4"><span>IGST (18%)</span><span>₹{gstAmount.toLocaleString()}</span></div>
+                  
+                  <div className="flex justify-between text-slate-500 text-sm"><span>CGST (9%)</span><span>₹{cgstAmount.toLocaleString()}</span></div>
+                  <div className="flex justify-between text-slate-500 text-sm border-b border-slate-700 pb-4"><span>SGST (9%)</span><span>₹{sgstAmount.toLocaleString()}</span></div>
+                  
                   <div className="flex justify-between text-2xl font-black text-white pt-2"><span>Grand Total</span><span className="text-yellow-400">₹{grandTotal.toLocaleString()}</span></div>
                   <button onClick={() => placeOrder(grandTotal)} className="w-full mt-6 bg-yellow-500 text-slate-900 font-bold py-4 rounded hover:bg-yellow-400 text-lg shadow-xl shadow-yellow-500/20 transition">Confirm Purchase Order</button>
                 </div>
@@ -457,7 +639,7 @@ export default function App() {
       e.preventDefault();
       const userPayload = { 
         ...newUserForm, 
-        discount: parseFloat(newUserForm.discount), // PARSE ONLY ON SUBMIT
+        discount: parseFloat(newUserForm.discount), 
         role: 'retailer' 
       };
       
