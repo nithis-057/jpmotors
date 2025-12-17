@@ -102,10 +102,12 @@ export default function App() {
     setView('login');
   };
 
+  // --- DECIMAL PRICE UPDATE ---
   const calculatePrice = (basePrice) => {
     if (!user || user.role === 'admin') return basePrice;
     const discountMultiplier = (100 - user.discount) / 100;
-    return Math.floor(basePrice * discountMultiplier);
+    // Changed from Math.floor to fixed decimals
+    return Number((basePrice * discountMultiplier).toFixed(2));
   };
 
   const addToCart = (product, qty) => {
@@ -127,7 +129,7 @@ export default function App() {
     setCart(cart.filter(item => item.id !== id));
   };
 
-  // --- AI SCANNING LOGIC (SMART AUTO-DETECT) ---
+  // --- AI SCANNING LOGIC ---
   const handleImageUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -147,35 +149,26 @@ export default function App() {
         const base64Data = reader.result.split(',')[1]; 
         const mimeType = file.type || 'image/jpeg'; 
 
-        // ---------------------------------------------------------
-        // STEP 1: AUTO-DETECT THE BEST AVAILABLE MODEL
-        // ---------------------------------------------------------
-        let activeModel = 'gemini-1.5-flash'; // Fallback
+        // STEP 1: AUTO-DETECT MODEL
+        let activeModel = 'gemini-1.5-flash'; 
         try {
-          // We ask the API: "Which models does this key have access to?"
           const listResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`);
           const listData = await listResp.json();
           
           if (listData.models) {
-            // We search for a model that supports generating content and is Flash or Pro
             const bestModel = listData.models.find(m => 
               (m.name.includes('flash') || m.name.includes('pro')) && 
               m.supportedGenerationMethods.includes('generateContent')
             );
-            
             if (bestModel) {
-              // The API returns "models/gemini-1.5-flash", we use that exactly
               activeModel = bestModel.name.replace('models/', '');
-              console.log("Auto-Detected Best Model:", activeModel);
             }
           }
         } catch (e) {
           console.warn("Model auto-detect failed, using fallback:", activeModel);
         }
 
-        // ---------------------------------------------------------
-        // STEP 2: SEND IMAGE TO THE DETECTED MODEL
-        // ---------------------------------------------------------
+        // STEP 2: SEND TO API
         const response = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${GEMINI_API_KEY}`,
           {
@@ -265,8 +258,6 @@ export default function App() {
       if(fileInputRef.current) fileInputRef.current.value = '';
     }
   };
-
-  // --- END AI LOGIC ---
 
   const placeOrder = async (grandTotal) => {
     const orderData = { userId: user.id, total: grandTotal };
@@ -446,7 +437,7 @@ export default function App() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map(product => {
               const myPrice = calculatePrice(product.price);
-              const savings = product.price - myPrice;
+              const savings = (product.price - myPrice).toFixed(2);
               const displayBrand = getProductBrand(product);
               const qtyValue = quantities[product.id] || '';
 
@@ -469,9 +460,9 @@ export default function App() {
                   
                   <div className="bg-slate-900/50 p-3 rounded mb-4 border border-slate-800">
                     <div className="flex justify-between items-end">
-                      <div className="text-slate-500 text-sm line-through decoration-slate-600 decoration-2">MRP: ₹{product.price}</div>
+                      <div className="text-slate-500 text-sm line-through decoration-slate-600 decoration-2">MRP: ₹{product.price.toFixed(2)}</div>
                       <div className="text-right">
-                        <div className="text-2xl font-black text-white">₹{myPrice}</div>
+                        <div className="text-2xl font-black text-white">₹{myPrice.toFixed(2)}</div>
                         {savings > 0 && (
                           <div className="text-xs font-bold text-green-400 flex items-center gap-1 justify-end">
                             <TrendingDown size={12} />
@@ -518,13 +509,14 @@ export default function App() {
   };
 
   const CartView = () => {
+    // --- DECIMAL MATH UPDATE ---
     const subtotal = cart.reduce((acc, item) => acc + (item.finalPrice * item.qty), 0);
     const taxableValue = subtotal; 
     
-    // CGST/SGST Calculation
-    const cgstAmount = Math.ceil(taxableValue * 0.09); 
-    const sgstAmount = Math.ceil(taxableValue * 0.09); 
-    const grandTotal = taxableValue + cgstAmount + sgstAmount;
+    // Tax Calculation (9% + 9%) with proper rounding
+    const cgstAmount = Number((taxableValue * 0.09).toFixed(2));
+    const sgstAmount = Number((taxableValue * 0.09).toFixed(2));
+    const grandTotal = Number((taxableValue + cgstAmount + sgstAmount).toFixed(2));
 
     return (
       <div className="min-h-screen bg-slate-900 text-slate-200">
@@ -540,7 +532,7 @@ export default function App() {
                   <div className="flex-1">
                     <h4 className="font-bold text-white">{item.name}</h4>
                     <p className="text-sm text-slate-400 font-mono">PN: {item.part_number}</p>
-                    <p className="text-sm font-bold text-yellow-500 mt-1">₹{item.finalPrice} / unit</p>
+                    <p className="text-sm font-bold text-yellow-500 mt-1">₹{item.finalPrice.toFixed(2)} / unit</p>
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="flex items-center bg-slate-900 rounded border border-slate-700">
@@ -549,7 +541,7 @@ export default function App() {
                       <button onClick={() => updateQuantity(item.id, item.qty + 1)} className="p-2 hover:bg-slate-700 text-slate-300 transition"><Plus size={16} /></button>
                     </div>
                     <div className="text-right min-w-[80px]">
-                      <p className="font-bold text-white">₹{item.finalPrice * item.qty}</p>
+                      <p className="font-bold text-white">₹{(item.finalPrice * item.qty).toFixed(2)}</p>
                       <button onClick={() => removeFromCart(item.id)} className="text-red-400 text-xs mt-1 flex items-center gap-1 justify-end hover:text-red-300 transition"><Trash2 size={12} /> Remove</button>
                     </div>
                   </div>
@@ -559,12 +551,12 @@ export default function App() {
               <div className="bg-slate-800 rounded shadow-lg overflow-hidden mt-8 border border-slate-700">
                 <div className="bg-slate-950 px-6 py-4 border-b border-slate-700"><h3 className="font-bold text-slate-300 flex items-center gap-2"><FileText size={18} /> Invoice Summary</h3></div>
                 <div className="p-6 space-y-3">
-                  <div className="flex justify-between text-slate-300"><span>Subtotal (Net)</span><span className="font-bold">₹{subtotal.toLocaleString()}</span></div>
+                  <div className="flex justify-between text-slate-300"><span>Subtotal (Net)</span><span className="font-bold">₹{subtotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></div>
                   
-                  <div className="flex justify-between text-slate-500 text-sm"><span>CGST (9%)</span><span>₹{cgstAmount.toLocaleString()}</span></div>
-                  <div className="flex justify-between text-slate-500 text-sm border-b border-slate-700 pb-4"><span>SGST (9%)</span><span>₹{sgstAmount.toLocaleString()}</span></div>
+                  <div className="flex justify-between text-slate-500 text-sm"><span>CGST (9%)</span><span>₹{cgstAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></div>
+                  <div className="flex justify-between text-slate-500 text-sm border-b border-slate-700 pb-4"><span>SGST (9%)</span><span>₹{sgstAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></div>
                   
-                  <div className="flex justify-between text-2xl font-black text-white pt-2"><span>Grand Total</span><span className="text-yellow-400">₹{grandTotal.toLocaleString()}</span></div>
+                  <div className="flex justify-between text-2xl font-black text-white pt-2"><span>Grand Total</span><span className="text-yellow-400">₹{grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></div>
                   <button onClick={() => placeOrder(grandTotal)} className="w-full mt-6 bg-yellow-500 text-slate-900 font-bold py-4 rounded hover:bg-yellow-400 text-lg shadow-xl shadow-yellow-500/20 transition">Confirm Purchase Order</button>
                 </div>
               </div>
@@ -604,7 +596,7 @@ export default function App() {
                   </div>
                   <div className="mt-2 md:mt-0 text-right">
                     <p className="text-xs text-slate-500 uppercase">Total Amount</p>
-                    <p className="text-xl font-black text-yellow-400">₹{order.total.toLocaleString()}</p>
+                    <p className="text-xl font-black text-yellow-400">₹{order.total.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
                   </div>
                 </div>
                 
@@ -612,7 +604,7 @@ export default function App() {
                   {order.items && order.items.map((item, idx) => (
                     <div key={idx} className="flex justify-between text-sm text-slate-400">
                       <span>{item.name} <span className="text-slate-600">x{item.qty}</span></span>
-                      <span className="font-mono text-slate-500">₹{item.price * item.qty}</span>
+                      <span className="font-mono text-slate-500">₹{(item.price * item.qty).toFixed(2)}</span>
                     </div>
                   ))}
                 </div>
@@ -697,10 +689,9 @@ export default function App() {
                    <tr key={p.id} className="hover:bg-slate-700/50 transition">
                      <td className="p-4 text-slate-200">{p.name}</td>
                      <td className="p-4 font-mono text-sm text-slate-400">{p.part_number}</td>
-                     {/* UPDATE: Using p.HSN_code here too for consistency */}
                      <td className="p-4 text-slate-400">{p.HSN_code || '-'}</td>
                      <td className="p-4 text-slate-400">{getProductBrand(p)}</td>
-                     <td className="p-4 text-slate-200">₹{p.price}</td>
+                     <td className="p-4 text-slate-200">₹{p.price.toFixed(2)}</td>
                      <td className="p-4 text-slate-200">{p.stock}</td>
                    </tr>
                  ))}</tbody>
@@ -738,7 +729,6 @@ export default function App() {
                     <input placeholder="Username" className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:border-yellow-500 outline-none" value={newUserForm.username} onChange={e => setNewUserForm({...newUserForm, username: e.target.value})} required />
                     <input placeholder="Password" className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:border-yellow-500 outline-none" value={newUserForm.password} onChange={e => setNewUserForm({...newUserForm, password: e.target.value})} required />
                   </div>
-                  {/* DECIMAL DISCOUNT FIX: STORE AS STRING, PARSE ON SUBMIT */}
                   <div>
                     <label className="text-xs font-bold text-slate-500">Discount Tier (%)</label>
                     <input 
@@ -793,7 +783,7 @@ export default function App() {
                         <p className="text-xs text-slate-600">Date: {order.date}</p>
                       </div>
                       <div className="text-right mt-2 md:mt-0">
-                         <p className="font-black text-xl text-yellow-400">₹{order.total.toLocaleString()}</p>
+                         <p className="font-black text-xl text-yellow-400">₹{order.total.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
                          <p className="text-xs text-slate-500">Items: {order.items.length}</p>
                       </div>
                     </div>
@@ -802,7 +792,7 @@ export default function App() {
                       {order.items.map((item, idx) => (
                         <div key={idx} className="flex justify-between border-b border-slate-700 last:border-0 pb-1 last:pb-0">
                           <span className="text-slate-300">{item.name} x {item.qty}</span>
-                          <span className="font-mono text-slate-500">₹{item.price * item.qty}</span>
+                          <span className="font-mono text-slate-500">₹{(item.price * item.qty).toFixed(2)}</span>
                         </div>
                       ))}
                     </div>
