@@ -171,7 +171,7 @@ export default function App() {
         const mimeType = file.type || 'image/jpeg';
 
         // STEP 1: AUTO-DETECT MODEL
-        let activeModel = 'gemini-1.5-flash';
+        let activeModel = 'gemini-2.5-flash-lite';
         try {
           const listResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`);
           const listData = await listResp.json();
