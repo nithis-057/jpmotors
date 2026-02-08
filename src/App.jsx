@@ -433,6 +433,7 @@ export default function App() {
               <input
                 type="file"
                 accept="image/*, .heic"
+                capture="environment"
                 ref={fileInputRef}
                 className="hidden"
                 onChange={handleImageUpload}
