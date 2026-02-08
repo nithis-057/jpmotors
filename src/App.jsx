@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react'; 
-import { 
-  Package, 
-  ShoppingCart, 
-  Users, 
-  Search, 
-  LogOut, 
-  Plus, 
-  Trash2, 
-  TrendingDown, 
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Package,
+  ShoppingCart,
+  Users,
+  Search,
+  LogOut,
+  Plus,
+  Trash2,
+  TrendingDown,
   Truck,
   FileText,
   UserPlus,
@@ -18,37 +18,58 @@ import {
   Home,
   Camera,
   Loader2,
-  AlertTriangle 
+  AlertTriangle
 } from 'lucide-react';
 
 // Import database functions
-import { 
-  fetchProducts, 
-  fetchUsers, 
-  fetchAllOrders, 
-  insertNewOrder, 
+import {
+  fetchProducts,
+  fetchUsers,
+  fetchAllOrders,
+  insertNewOrder,
   updateOrderStatus as updateDbOrderStatus,
   insertUser,
-  deleteUser 
+  deleteUser
 } from './supabaseClient';
 
 // --- CONFIGURATION ---
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY; 
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
 export default function App() {
-  const [user, setUser] = useState(null); 
-  const [view, setView] = useState('login'); 
-  
+  console.log('App component rendering...');
+
+  if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-4">
+        <div className="bg-red-900/20 border border-red-500/50 p-8 rounded-lg max-w-lg text-center">
+          <AlertTriangle size={48} className="mx-auto text-red-500 mb-4" />
+          <h1 className="text-2xl font-bold text-red-400 mb-2">Configuration Error</h1>
+          <p className="text-slate-300 mb-4">
+            The application could not start because the Supabase configuration is missing.
+          </p>
+          <div className="bg-black/30 p-4 rounded text-left text-xs font-mono text-slate-400">
+            <p className="mb-2">Please create a <span className="text-yellow-400">.env</span> file in the project root with:</p>
+            <p>VITE_SUPABASE_URL=...</p>
+            <p>VITE_SUPABASE_ANON_KEY=...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const [user, setUser] = useState(null);
+  const [view, setView] = useState('login');
+
   // Data States
   const [products, setProducts] = useState([]);
   const [users, setUsers] = useState([]);
   const [orders, setOrders] = useState([]);
   const [cart, setCart] = useState([]);
-  
+
   // UI States
   const [loginError, setLoginError] = useState('');
-  const [isScanning, setIsScanning] = useState(false); 
-  const fileInputRef = useRef(null); 
+  const [isScanning, setIsScanning] = useState(false);
+  const fileInputRef = useRef(null);
 
   // --- 1. SESSION PERSISTENCE ---
   useEffect(() => {
@@ -76,7 +97,7 @@ export default function App() {
     }
     loadData();
   }, []);
-  
+
 
   // --- CORE LOGIC ---
   const handleLogin = (e) => {
@@ -84,11 +105,11 @@ export default function App() {
     const username = e.target.username.value;
     const password = e.target.password.value;
     const foundUser = users.find(u => u.username === username && u.password === password);
-    
+
     if (foundUser) {
       setUser(foundUser);
       setLoginError('');
-      localStorage.setItem('jp_user', JSON.stringify(foundUser)); 
+      localStorage.setItem('jp_user', JSON.stringify(foundUser));
       setView(foundUser.role === 'admin' ? 'admin' : 'catalog');
     } else {
       setLoginError('Invalid credentials.');
@@ -96,7 +117,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('jp_user'); 
+    localStorage.removeItem('jp_user');
     setUser(null);
     setCart([]);
     setView('login');
@@ -144,20 +165,20 @@ export default function App() {
     try {
       const reader = new FileReader();
       reader.readAsDataURL(file);
-      
+
       reader.onloadend = async () => {
-        const base64Data = reader.result.split(',')[1]; 
-        const mimeType = file.type || 'image/jpeg'; 
+        const base64Data = reader.result.split(',')[1];
+        const mimeType = file.type || 'image/jpeg';
 
         // STEP 1: AUTO-DETECT MODEL
-        let activeModel = 'gemini-1.5-flash'; 
+        let activeModel = 'gemini-1.5-flash';
         try {
           const listResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`);
           const listData = await listResp.json();
-          
+
           if (listData.models) {
-            const bestModel = listData.models.find(m => 
-              (m.name.includes('flash') || m.name.includes('pro')) && 
+            const bestModel = listData.models.find(m =>
+              (m.name.includes('flash') || m.name.includes('pro')) &&
               m.supportedGenerationMethods.includes('generateContent')
             );
             if (bestModel) {
@@ -177,12 +198,12 @@ export default function App() {
             body: JSON.stringify({
               contents: [{
                 parts: [
-                  { 
+                  {
                     text: `Analyze this image (handwritten or printed list). Extract automobile spare part numbers and their quantities.
                            - Look for format like "PartNumber - Qty" or "PartNumber 5".
                            - If quantity is missing, default to 1.
                            - Return strictly a JSON Array: [{"part_number": "string", "qty": number}]
-                           - Do not include markdown formatting.` 
+                           - Do not include markdown formatting.`
                   },
                   { inline_data: { mime_type: mimeType, data: base64Data } }
                 ]
@@ -192,7 +213,7 @@ export default function App() {
         );
 
         const data = await response.json();
-        
+
         if (data.error) {
           console.error("Gemini API Error:", data.error);
           alert(`AI Error: ${data.error.message}\n(Tried model: ${activeModel})`);
@@ -203,26 +224,26 @@ export default function App() {
         if (data.candidates && data.candidates[0].content) {
           const rawText = data.candidates[0].content.parts[0].text;
           const cleanJson = rawText.replace(/```json|```/g, '').trim();
-          
+
           try {
             const detectedItems = JSON.parse(cleanJson);
             let foundCount = 0;
             let missingItems = [];
-            
+
             let currentCart = [...cart];
 
             detectedItems.forEach(item => {
               const cleanPartNo = String(item.part_number).replace(/\s/g, '').toLowerCase();
-              
-              const product = products.find(p => 
+
+              const product = products.find(p =>
                 (p.part_number && p.part_number.replace(/\s/g, '').toLowerCase() === cleanPartNo) ||
-                (p.name && p.name.toLowerCase().includes(cleanPartNo)) 
+                (p.name && p.name.toLowerCase().includes(cleanPartNo))
               );
 
               if (product) {
                 const finalPrice = calculatePrice(product.price);
                 const existingItemIndex = currentCart.findIndex(c => c.id === product.id);
-                
+
                 if (existingItemIndex > -1) {
                   currentCart[existingItemIndex].qty += (item.qty || 1);
                 } else {
@@ -235,7 +256,7 @@ export default function App() {
             });
 
             setCart(currentCart);
-            
+
             let msg = `Scan Complete!\nFound: ${foundCount} items.`;
             if (missingItems.length > 0) {
               msg += `\n\nCould not find in DB: ${missingItems.join(', ')}`;
@@ -255,7 +276,7 @@ export default function App() {
       alert("System Error: Check console for details.");
     } finally {
       setIsScanning(false);
-      if(fileInputRef.current) fileInputRef.current.value = '';
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -329,13 +350,13 @@ export default function App() {
           <Truck className="text-yellow-500" />
           <span className="font-black text-xl tracking-tight uppercase">JP Motors</span>
         </div>
-        
+
         <div className="flex items-center gap-4">
           <div className="text-right hidden md:block">
             <p className="text-sm font-bold text-yellow-400">{user.name}</p>
             <p className="text-xs text-slate-500">Tier: <span className="text-white">{user.discount}% OFF</span></p>
           </div>
-          
+
           <button onClick={() => setView('catalog')} title="Home" className="p-2 hover:bg-slate-800 rounded flex items-center gap-2 text-slate-400 hover:text-white transition">
             <Home size={20} />
             <span className="hidden sm:block font-bold text-sm">Home</span>
@@ -344,12 +365,12 @@ export default function App() {
           <button onClick={() => setView('orders')} title="Order History" className="p-2 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition">
             <Clock size={20} />
           </button>
-          
+
           <button onClick={() => setView('cart')} className="relative p-2 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition">
             <ShoppingCart size={20} />
             {cart.length > 0 && <span className="absolute top-0 right-0 bg-yellow-500 text-slate-900 text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">{cart.length}</span>}
           </button>
-          
+
           <button onClick={handleLogout}><LogOut size={20} className="text-slate-500 hover:text-red-400 transition" /></button>
         </div>
       </div>
@@ -369,8 +390,8 @@ export default function App() {
 
       const matchesSearch = name.includes(term) || partNo.includes(term) || brandName.includes(term);
       const productBrand = getProductBrand(p);
-      const matchesBrand = selectedBrand === 'All' || productBrand === selectedBrand; 
-      
+      const matchesBrand = selectedBrand === 'All' || productBrand === selectedBrand;
+
       return matchesSearch && matchesBrand;
     });
 
@@ -380,13 +401,13 @@ export default function App() {
     return (
       <div className="bg-slate-900 min-h-screen pb-20">
         <Header />
-        
+
         <div className="bg-slate-950 px-4 py-3 print:hidden border-b border-slate-800 shadow-md sticky top-[72px] z-40">
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row gap-4">
-            
+
             <div className="relative flex-1">
               <Search className="absolute left-3 top-2.5 text-slate-500 w-5 h-5" />
-              <input 
+              <input
                 className="w-full bg-slate-900 text-white border border-slate-800 rounded pl-10 pr-4 py-2 focus:border-yellow-500 outline-none placeholder-slate-600 transition"
                 placeholder="Search Part Name, PN, or Brand..."
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -395,28 +416,28 @@ export default function App() {
 
             <div className="flex gap-2 w-full md:w-auto">
               <div className="w-full md:w-48">
-                <select 
+                <select
                   value={selectedBrand}
                   onChange={(e) => setSelectedBrand(e.target.value)}
                   className="w-full bg-slate-900 text-slate-300 border border-slate-800 rounded px-4 py-2 focus:border-yellow-500 outline-none cursor-pointer"
                 >
-                  {sortedBrands.length > 1 
+                  {sortedBrands.length > 1
                     ? sortedBrands.map(brand => (
-                        <option key={brand} value={brand}>{brand === 'All' ? 'All Brands' : brand}</option>
-                      ))
+                      <option key={brand} value={brand}>{brand === 'All' ? 'All Brands' : brand}</option>
+                    ))
                     : <option value="All">All Brands</option>
                   }
                 </select>
               </div>
 
-              <input 
-                type="file" 
-                accept="image/*, .heic" 
-                ref={fileInputRef} 
-                className="hidden" 
+              <input
+                type="file"
+                accept="image/*, .heic"
+                ref={fileInputRef}
+                className="hidden"
                 onChange={handleImageUpload}
               />
-              <button 
+              <button
                 onClick={() => fileInputRef.current.click()}
                 disabled={isScanning}
                 className={`bg-slate-800 border border-slate-700 text-yellow-500 px-4 py-2 rounded hover:bg-slate-700 transition flex items-center gap-2 ${isScanning ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -432,76 +453,76 @@ export default function App() {
 
         <div className="max-w-7xl mx-auto px-4 py-8">
           {products.length === 0 ? (
-             <div className="text-center py-20 opacity-50 text-slate-400"><p>Loading Products...</p></div>
+            <div className="text-center py-20 opacity-50 text-slate-400"><p>Loading Products...</p></div>
           ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map(product => {
-              const myPrice = calculatePrice(product.price);
-              const savings = (product.price - myPrice).toFixed(2);
-              const displayBrand = getProductBrand(product);
-              const qtyValue = quantities[product.id] || '';
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filtered.map(product => {
+                const myPrice = calculatePrice(product.price);
+                const savings = (product.price - myPrice).toFixed(2);
+                const displayBrand = getProductBrand(product);
+                const qtyValue = quantities[product.id] || '';
 
-              return (
-                <div key={product.id} className="bg-slate-800 p-4 rounded-lg border border-slate-700 shadow-lg hover:border-yellow-500/50 transition duration-200 group">
-                  <div className="flex justify-between items-start mb-2">
-                    <span className="text-xs font-bold bg-slate-700 text-slate-300 px-2 py-1 rounded font-mono flex items-center gap-2">
-                      <span>PN: {product.part_number}</span>
-                      {product.HSN_code && (
-                        <>
-                          <span className="text-slate-600">|</span>
-                          <span className="text-slate-300">HSN: {product.HSN_code}</span>
-                        </>
-                      )}
-                    </span>
-                    <span className="text-xs text-slate-500 uppercase tracking-wider font-bold">{displayBrand}</span>
-                  </div>
-                  
-                  <h3 className="font-bold text-lg text-white mb-4 line-clamp-2 min-h-[3.5rem] group-hover:text-yellow-400 transition">{product.name}</h3>
-                  
-                  <div className="bg-slate-900/50 p-3 rounded mb-4 border border-slate-800">
-                    <div className="flex justify-between items-end">
-                      <div className="text-slate-500 text-sm line-through decoration-slate-600 decoration-2">MRP: ₹{product.price.toFixed(2)}</div>
-                      <div className="text-right">
-                        <div className="text-2xl font-black text-white">₹{myPrice.toFixed(2)}</div>
-                        {savings > 0 && (
-                          <div className="text-xs font-bold text-green-400 flex items-center gap-1 justify-end">
-                            <TrendingDown size={12} />
-                            Save ₹{savings}
-                          </div>
+                return (
+                  <div key={product.id} className="bg-slate-800 p-4 rounded-lg border border-slate-700 shadow-lg hover:border-yellow-500/50 transition duration-200 group">
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="text-xs font-bold bg-slate-700 text-slate-300 px-2 py-1 rounded font-mono flex items-center gap-2">
+                        <span>PN: {product.part_number}</span>
+                        {product.HSN_code && (
+                          <>
+                            <span className="text-slate-600">|</span>
+                            <span className="text-slate-300">HSN: {product.HSN_code}</span>
+                          </>
                         )}
+                      </span>
+                      <span className="text-xs text-slate-500 uppercase tracking-wider font-bold">{displayBrand}</span>
+                    </div>
+
+                    <h3 className="font-bold text-lg text-white mb-4 line-clamp-2 min-h-[3.5rem] group-hover:text-yellow-400 transition">{product.name}</h3>
+
+                    <div className="bg-slate-900/50 p-3 rounded mb-4 border border-slate-800">
+                      <div className="flex justify-between items-end">
+                        <div className="text-slate-500 text-sm line-through decoration-slate-600 decoration-2">MRP: ₹{product.price.toFixed(2)}</div>
+                        <div className="text-right">
+                          <div className="text-2xl font-black text-white">₹{myPrice.toFixed(2)}</div>
+                          {savings > 0 && (
+                            <div className="text-xs font-bold text-green-400 flex items-center gap-1 justify-end">
+                              <TrendingDown size={12} />
+                              Save ₹{savings}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="flex gap-2">
-                    <input 
-                      type="number" 
-                      min="1"
-                      placeholder="1"
-                      className="w-20 p-2 bg-slate-950 border border-slate-700 rounded text-white text-center focus:border-yellow-500 outline-none transition"
-                      value={qtyValue}
-                      onChange={(e) => setQuantities({...quantities, [product.id]: e.target.value})}
-                    />
-                    <button 
-                      onClick={() => {
-                        const qtyToAdd = parseInt(qtyValue) > 0 ? parseInt(qtyValue) : 1;
-                        addToCart(product, qtyToAdd);
-                      }} 
-                      className="flex-1 bg-yellow-500 text-slate-900 font-bold py-2 rounded hover:bg-yellow-400 transition flex justify-center items-center gap-2 shadow-lg shadow-yellow-500/20 active:scale-95"
-                    >
-                      <Plus size={16} /> Add {qtyValue ? qtyValue : ''}
-                    </button>
-                  </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="1"
+                        className="w-20 p-2 bg-slate-950 border border-slate-700 rounded text-white text-center focus:border-yellow-500 outline-none transition"
+                        value={qtyValue}
+                        onChange={(e) => setQuantities({ ...quantities, [product.id]: e.target.value })}
+                      />
+                      <button
+                        onClick={() => {
+                          const qtyToAdd = parseInt(qtyValue) > 0 ? parseInt(qtyValue) : 1;
+                          addToCart(product, qtyToAdd);
+                        }}
+                        className="flex-1 bg-yellow-500 text-slate-900 font-bold py-2 rounded hover:bg-yellow-400 transition flex justify-center items-center gap-2 shadow-lg shadow-yellow-500/20 active:scale-95"
+                      >
+                        <Plus size={16} /> Add {qtyValue ? qtyValue : ''}
+                      </button>
+                    </div>
 
-                </div>
-              );
-            })}
-             {filtered.length === 0 && (
+                  </div>
+                );
+              })}
+              {filtered.length === 0 && (
                 <div className="col-span-full text-center py-10 opacity-50 text-slate-400">
-                    <p>No products found matching your search or filter.</p>
+                  <p>No products found matching your search or filter.</p>
                 </div>
-            )}
-          </div>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -511,8 +532,8 @@ export default function App() {
   const CartView = () => {
     // --- DECIMAL MATH UPDATE ---
     const subtotal = cart.reduce((acc, item) => acc + (item.finalPrice * item.qty), 0);
-    const taxableValue = subtotal; 
-    
+    const taxableValue = subtotal;
+
     // Tax Calculation (9% + 9%) with proper rounding
     const cgstAmount = Number((taxableValue * 0.09).toFixed(2));
     const sgstAmount = Number((taxableValue * 0.09).toFixed(2));
@@ -547,16 +568,16 @@ export default function App() {
                   </div>
                 </div>
               ))}
-              
+
               <div className="bg-slate-800 rounded shadow-lg overflow-hidden mt-8 border border-slate-700">
                 <div className="bg-slate-950 px-6 py-4 border-b border-slate-700"><h3 className="font-bold text-slate-300 flex items-center gap-2"><FileText size={18} /> Invoice Summary</h3></div>
                 <div className="p-6 space-y-3">
-                  <div className="flex justify-between text-slate-300"><span>Subtotal (Net)</span><span className="font-bold">₹{subtotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></div>
-                  
-                  <div className="flex justify-between text-slate-500 text-sm"><span>CGST (9%)</span><span>₹{cgstAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></div>
-                  <div className="flex justify-between text-slate-500 text-sm border-b border-slate-700 pb-4"><span>SGST (9%)</span><span>₹{sgstAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></div>
-                  
-                  <div className="flex justify-between text-2xl font-black text-white pt-2"><span>Grand Total</span><span className="text-yellow-400">₹{grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></div>
+                  <div className="flex justify-between text-slate-300"><span>Subtotal (Net)</span><span className="font-bold">₹{subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+
+                  <div className="flex justify-between text-slate-500 text-sm"><span>CGST (9%)</span><span>₹{cgstAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+                  <div className="flex justify-between text-slate-500 text-sm border-b border-slate-700 pb-4"><span>SGST (9%)</span><span>₹{sgstAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+
+                  <div className="flex justify-between text-2xl font-black text-white pt-2"><span>Grand Total</span><span className="text-yellow-400">₹{grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
                   <button onClick={() => placeOrder(grandTotal)} className="w-full mt-6 bg-yellow-500 text-slate-900 font-bold py-4 rounded hover:bg-yellow-400 text-lg shadow-xl shadow-yellow-500/20 transition">Confirm Purchase Order</button>
                 </div>
               </div>
@@ -576,47 +597,46 @@ export default function App() {
         <div className="max-w-4xl mx-auto p-6">
           <h2 className="text-xl font-bold mb-6 text-white">Order History</h2>
           {orders.length === 0 ? <p className="opacity-50 text-center text-slate-400">No orders found.</p> : (
-          <div className="space-y-4">
-            {myOrders.map(order => (
-              <div key={order.id} className="bg-slate-800 border border-slate-700 rounded-lg p-6 shadow-md">
-                <div className="flex flex-col md:flex-row justify-between md:items-center mb-4 border-b border-slate-700 pb-4">
-                  <div>
-                    <div className="flex items-center gap-3">
-                      <h3 className="text-lg font-bold text-white">Order #{order.id}</h3>
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                        order.status === 'Pending' ? 'bg-yellow-900/40 text-yellow-400 border border-yellow-800' : 
-                        order.status === 'Packed' ? 'bg-blue-900/40 text-blue-400 border border-blue-800' :
-                        'bg-green-900/40 text-green-400 border border-green-800'
-                      }`}>
-                        {order.status}
-                      </span>
+            <div className="space-y-4">
+              {myOrders.map(order => (
+                <div key={order.id} className="bg-slate-800 border border-slate-700 rounded-lg p-6 shadow-md">
+                  <div className="flex flex-col md:flex-row justify-between md:items-center mb-4 border-b border-slate-700 pb-4">
+                    <div>
+                      <div className="flex items-center gap-3">
+                        <h3 className="text-lg font-bold text-white">Order #{order.id}</h3>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${order.status === 'Pending' ? 'bg-yellow-900/40 text-yellow-400 border border-yellow-800' :
+                          order.status === 'Packed' ? 'bg-blue-900/40 text-blue-400 border border-blue-800' :
+                            'bg-green-900/40 text-green-400 border border-green-800'
+                          }`}>
+                          {order.status}
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-500 mt-1">Customer: {order.customerName} ({order.userId})</p>
+                      <p className="text-xs text-slate-600">Date: {order.date}</p>
                     </div>
-                    <p className="text-sm text-slate-500 mt-1">Customer: {order.customerName} ({order.userId})</p>
-                    <p className="text-xs text-slate-600">Date: {order.date}</p>
-                  </div>
-                  <div className="mt-2 md:mt-0 text-right">
-                    <p className="text-xs text-slate-500 uppercase">Total Amount</p>
-                    <p className="text-xl font-black text-yellow-400">₹{order.total.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
-                  </div>
-                </div>
-                
-                <div className="space-y-2 mb-4">
-                  {order.items && order.items.map((item, idx) => (
-                    <div key={idx} className="flex justify-between text-sm text-slate-400">
-                      <span>{item.name} <span className="text-slate-600">x{item.qty}</span></span>
-                      <span className="font-mono text-slate-500">₹{(item.price * item.qty).toFixed(2)}</span>
+                    <div className="mt-2 md:mt-0 text-right">
+                      <p className="text-xs text-slate-500 uppercase">Total Amount</p>
+                      <p className="text-xl font-black text-yellow-400">₹{order.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                     </div>
-                  ))}
-                </div>
+                  </div>
 
-                <div className="flex gap-3 pt-2">
-                   <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-slate-700 text-slate-300 rounded hover:bg-slate-600 text-sm font-bold transition border border-slate-600">
-                     <Printer size={16} /> Print Order
-                   </button>
+                  <div className="space-y-2 mb-4">
+                    {order.items && order.items.map((item, idx) => (
+                      <div key={idx} className="flex justify-between text-sm text-slate-400">
+                        <span>{item.name} <span className="text-slate-600">x{item.qty}</span></span>
+                        <span className="font-mono text-slate-500">₹{(item.price * item.qty).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-slate-700 text-slate-300 rounded hover:bg-slate-600 text-sm font-bold transition border border-slate-600">
+                      <Printer size={16} /> Print Order
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
           )}
         </div>
       </div>
@@ -624,17 +644,17 @@ export default function App() {
   };
 
   const AdminView = () => {
-    const [activeTab, setActiveTab] = useState('orders'); 
+    const [activeTab, setActiveTab] = useState('orders');
     const [newUserForm, setNewUserForm] = useState({ name: '', username: '', password: '', discount: 10 });
 
     const handleCreateUser = async (e) => {
       e.preventDefault();
-      const userPayload = { 
-        ...newUserForm, 
-        discount: parseFloat(newUserForm.discount), 
-        role: 'retailer' 
+      const userPayload = {
+        ...newUserForm,
+        discount: parseFloat(newUserForm.discount),
+        role: 'retailer'
       };
-      
+
       const createdUser = await insertUser(userPayload);
       if (createdUser) {
         setUsers([...users, createdUser]);
@@ -647,8 +667,8 @@ export default function App() {
 
     const handleDeleteUser = async (userId, userName) => {
       if (!window.confirm(`Are you sure you want to delete ${userName}?`)) return;
-      
-      const success = await deleteUser(userId); 
+
+      const success = await deleteUser(userId);
       if (success) {
         setUsers(users.filter(u => u.id !== userId));
         alert("User Deleted Successfully");
@@ -674,28 +694,28 @@ export default function App() {
 
           {activeTab === 'inventory' && (
             <div className="bg-slate-800 rounded shadow overflow-hidden border border-slate-700">
-               <table className="w-full text-left">
-                 <thead className="bg-slate-950 border-b border-slate-700">
-                   <tr>
-                     <th className="p-4 text-sm font-bold text-slate-400">Part Name</th>
-                     <th className="p-4 text-sm font-bold text-slate-400">Part Number</th>
-                     <th className="p-4 text-sm font-bold text-slate-400">HSN Code</th>
-                     <th className="p-4 text-sm font-bold text-slate-400">Category</th>
-                     <th className="p-4 text-sm font-bold text-slate-400">Price</th>
-                     <th className="p-4 text-sm font-bold text-slate-400">Stock</th>
-                   </tr>
-                 </thead>
-                 <tbody className="divide-y divide-slate-700">{products.map(p => (
-                   <tr key={p.id} className="hover:bg-slate-700/50 transition">
-                     <td className="p-4 text-slate-200">{p.name}</td>
-                     <td className="p-4 font-mono text-sm text-slate-400">{p.part_number}</td>
-                     <td className="p-4 text-slate-400">{p.HSN_code || '-'}</td>
-                     <td className="p-4 text-slate-400">{getProductBrand(p)}</td>
-                     <td className="p-4 text-slate-200">₹{p.price.toFixed(2)}</td>
-                     <td className="p-4 text-slate-200">{p.stock}</td>
-                   </tr>
-                 ))}</tbody>
-               </table>
+              <table className="w-full text-left">
+                <thead className="bg-slate-950 border-b border-slate-700">
+                  <tr>
+                    <th className="p-4 text-sm font-bold text-slate-400">Part Name</th>
+                    <th className="p-4 text-sm font-bold text-slate-400">Part Number</th>
+                    <th className="p-4 text-sm font-bold text-slate-400">HSN Code</th>
+                    <th className="p-4 text-sm font-bold text-slate-400">Category</th>
+                    <th className="p-4 text-sm font-bold text-slate-400">Price</th>
+                    <th className="p-4 text-sm font-bold text-slate-400">Stock</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700">{products.map(p => (
+                  <tr key={p.id} className="hover:bg-slate-700/50 transition">
+                    <td className="p-4 text-slate-200">{p.name}</td>
+                    <td className="p-4 font-mono text-sm text-slate-400">{p.part_number}</td>
+                    <td className="p-4 text-slate-400">{p.HSN_code || '-'}</td>
+                    <td className="p-4 text-slate-400">{getProductBrand(p)}</td>
+                    <td className="p-4 text-slate-200">₹{p.price.toFixed(2)}</td>
+                    <td className="p-4 text-slate-200">{p.stock}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
             </div>
           )}
 
@@ -705,18 +725,18 @@ export default function App() {
                 {users.filter(u => u.role !== 'admin').map(u => (
                   <div key={u.id} className="bg-slate-800 p-4 rounded shadow flex justify-between items-center border border-slate-700">
                     <div>
-                        <h4 className="font-bold text-white">{u.name}</h4>
-                        <p className="text-sm text-slate-500">User: {u.username}</p>
+                      <h4 className="font-bold text-white">{u.name}</h4>
+                      <p className="text-sm text-slate-500">User: {u.username}</p>
                     </div>
                     <div className="flex items-center gap-3">
-                        <div className="bg-green-900/30 text-green-400 border border-green-800 px-3 py-1 rounded text-sm font-bold">{u.discount}% Discount</div>
-                        <button 
-                            onClick={() => handleDeleteUser(u.id, u.name)} 
-                            className="p-2 text-slate-500 hover:text-red-400 hover:bg-slate-700 rounded transition"
-                            title="Delete User"
-                        >
-                            <Trash2 size={18} />
-                        </button>
+                      <div className="bg-green-900/30 text-green-400 border border-green-800 px-3 py-1 rounded text-sm font-bold">{u.discount}% Discount</div>
+                      <button
+                        onClick={() => handleDeleteUser(u.id, u.name)}
+                        className="p-2 text-slate-500 hover:text-red-400 hover:bg-slate-700 rounded transition"
+                        title="Delete User"
+                      >
+                        <Trash2 size={18} />
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -724,19 +744,19 @@ export default function App() {
               <div className="bg-slate-800 p-6 rounded shadow h-fit border border-slate-700">
                 <h3 className="font-bold mb-4 flex items-center gap-2 text-white"><UserPlus size={18} /> Add Retailer</h3>
                 <form onSubmit={handleCreateUser} className="space-y-3">
-                  <input placeholder="Shop Name" className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:border-yellow-500 outline-none" value={newUserForm.name} onChange={e => setNewUserForm({...newUserForm, name: e.target.value})} required />
+                  <input placeholder="Shop Name" className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:border-yellow-500 outline-none" value={newUserForm.name} onChange={e => setNewUserForm({ ...newUserForm, name: e.target.value })} required />
                   <div className="grid grid-cols-2 gap-2">
-                    <input placeholder="Username" className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:border-yellow-500 outline-none" value={newUserForm.username} onChange={e => setNewUserForm({...newUserForm, username: e.target.value})} required />
-                    <input placeholder="Password" className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:border-yellow-500 outline-none" value={newUserForm.password} onChange={e => setNewUserForm({...newUserForm, password: e.target.value})} required />
+                    <input placeholder="Username" className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:border-yellow-500 outline-none" value={newUserForm.username} onChange={e => setNewUserForm({ ...newUserForm, username: e.target.value })} required />
+                    <input placeholder="Password" className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:border-yellow-500 outline-none" value={newUserForm.password} onChange={e => setNewUserForm({ ...newUserForm, password: e.target.value })} required />
                   </div>
                   <div>
                     <label className="text-xs font-bold text-slate-500">Discount Tier (%)</label>
-                    <input 
-                      type="number" 
-                      step="0.01" 
-                      className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:border-yellow-500 outline-none" 
-                      value={newUserForm.discount} 
-                      onChange={e => setNewUserForm({...newUserForm, discount: e.target.value})} 
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:border-yellow-500 outline-none"
+                      value={newUserForm.discount}
+                      onChange={e => setNewUserForm({ ...newUserForm, discount: e.target.value })}
                     />
                   </div>
                   <button className="w-full bg-yellow-500 text-slate-900 font-bold py-2 rounded hover:bg-yellow-400 transition">Create Credentials</button>
@@ -744,23 +764,23 @@ export default function App() {
               </div>
             </div>
           )}
-          
+
           {activeTab === 'orders' && (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div className="bg-slate-800 p-4 rounded shadow border-l-4 border-yellow-500">
-                   <p className="text-xs text-slate-500 uppercase font-bold">Pending Orders</p>
-                   <p className="text-2xl font-black text-white">{orders.filter(o => o.status === 'Pending').length}</p>
+                  <p className="text-xs text-slate-500 uppercase font-bold">Pending Orders</p>
+                  <p className="text-2xl font-black text-white">{orders.filter(o => o.status === 'Pending').length}</p>
                 </div>
                 <div className="bg-slate-800 p-4 rounded shadow border-l-4 border-blue-500">
-                   <p className="text-xs text-slate-500 uppercase font-bold">To Be Shipped</p>
-                   <p className="text-2xl font-black text-white">{orders.filter(o => o.status === 'Packed').length}</p>
+                  <p className="text-xs text-slate-500 uppercase font-bold">To Be Shipped</p>
+                  <p className="text-2xl font-black text-white">{orders.filter(o => o.status === 'Packed').length}</p>
                 </div>
                 <div className="bg-slate-800 p-4 rounded shadow border-l-4 border-green-500">
-                   <p className="text-xs text-slate-500 uppercase font-bold">Completed Revenue</p>
-                   <p className="text-2xl font-black text-white">
-                     ₹{(orders.filter(o => o.status === 'Delivered').reduce((acc, curr) => acc + curr.total, 0)/1000).toFixed(1)}k
-                   </p>
+                  <p className="text-xs text-slate-500 uppercase font-bold">Completed Revenue</p>
+                  <p className="text-2xl font-black text-white">
+                    ₹{(orders.filter(o => o.status === 'Delivered').reduce((acc, curr) => acc + curr.total, 0) / 1000).toFixed(1)}k
+                  </p>
                 </div>
               </div>
 
@@ -771,11 +791,10 @@ export default function App() {
                       <div>
                         <div className="flex items-center gap-3">
                           <h4 className="font-bold text-lg text-white">#{order.id}</h4>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                            order.status === 'Pending' ? 'bg-yellow-900/40 text-yellow-400 border border-yellow-800' : 
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${order.status === 'Pending' ? 'bg-yellow-900/40 text-yellow-400 border border-yellow-800' :
                             order.status === 'Packed' ? 'bg-blue-900/40 text-blue-400 border border-blue-800' :
-                            'bg-green-900/40 text-green-400 border border-green-800'
-                          }`}>
+                              'bg-green-900/40 text-green-400 border border-green-800'
+                            }`}>
                             {order.status}
                           </span>
                         </div>
@@ -783,8 +802,8 @@ export default function App() {
                         <p className="text-xs text-slate-600">Date: {order.date}</p>
                       </div>
                       <div className="text-right mt-2 md:mt-0">
-                         <p className="font-black text-xl text-yellow-400">₹{order.total.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
-                         <p className="text-xs text-slate-500">Items: {order.items.length}</p>
+                        <p className="font-black text-xl text-yellow-400">₹{order.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                        <p className="text-xs text-slate-500">Items: {order.items.length}</p>
                       </div>
                     </div>
 
@@ -799,16 +818,16 @@ export default function App() {
 
                     <div className="flex gap-2">
                       {order.status === 'Pending' && (
-                        <button 
+                        <button
                           onClick={() => updateOrderStatus(order.id, 'Packed')}
                           className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded hover:bg-blue-700 flex items-center gap-2"
                         >
                           <Box size={16} /> Mark as Packed
                         </button>
                       )}
-                      
+
                       {order.status === 'Packed' && (
-                        <button 
+                        <button
                           onClick={() => updateOrderStatus(order.id, 'Delivered')}
                           className="px-4 py-2 bg-green-600 text-white text-sm font-bold rounded hover:bg-green-700 flex items-center gap-2"
                         >
